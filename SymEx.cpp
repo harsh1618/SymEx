@@ -167,6 +167,50 @@ void encodeConstraints (vector<Instruction> constraints)
     }
 }
 
+
+// takes vector of instruction as input and outputs true/false 
+bool taintAnalyse(vector<Instruction *>path)
+{
+    vector<Instruction *> symList;
+    for(vector<Instruction *>::iterator I=path.begin(), e = path.end();I!=e;I++ ){
+       if (isa<AllocaInst>(*I)){
+           (*I)->dump();
+           if ((*I)->getName().substr(0,3)=="sym"){
+                symList.push_back(*I);
+           }
+       }
+       if (auto c = dyn_cast<CallInst>(*I)){
+           if(c->getCalledFunction()->getName()=="eval"){ //check if the value in eval is symbolic
+                I--;
+               (*I)->dump();
+                //check for load 
+                if(isa<LoadInst>(*I)){
+                    for (auto& sym:symList){
+                        if(sym->getName() == (*I)->getOperand(0)->getName())
+                            return true;
+                    } 
+                }
+                I++; 
+           }
+           if(c->getCalledFunction()->getName()=="write"){ //check if the value in eval is symbolic
+                I--;
+               (*I)->dump();
+                //check for load 
+                if(isa<LoadInst>(*I)){
+                    for (auto& sym:symList){
+                        if(sym->getName() == (*I)->getOperand(0)->getName())
+                            return true;
+                    } 
+                }
+                I++; 
+           }
+
+               
+       }
+    }
+   return false; 
+}
+
 /* Find path constraints of the basic block and add them to constraints found so far.
  * branches specifies the branch conditions on the path. */
 void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst *, branchCondition> branches,  bool verbose)
@@ -205,7 +249,6 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst
     }
 
 }
-
 namespace {
     struct SymEx : public FunctionPass {
         static char ID;
