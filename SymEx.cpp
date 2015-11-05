@@ -177,6 +177,35 @@ CmpInst::Predicate negatePredicate(CmpInst::Predicate pred)
     return CmpInst::BAD_ICMP_PREDICATE; //dummy
 }
 
+// takes vector of instruction as input and outputs true/false 
+bool taintAnalyse(vector<Instruction *>path)
+{
+    vector<Instruction *> symList;
+    for(vector<Instruction *>::iterator I=path.begin(), e = path.end();I!=e;I++ ){
+       if (isa<AllocaInst>(*I)){
+           (*I)->dump();
+           if ((*I)->getName().substr(0,3)=="sym"){
+                symList.push_back(*I);
+           }
+       }
+       if (auto c = dyn_cast<CallInst>(*I)){
+           if(c->getCalledFunction()->getName()=="eval"){ //check if the value in eval is symbolic
+                I--;
+               (*I)->dump();
+                //check for load 
+                if(isa<LoadInst>(*I)){
+                    for (auto& sym:symList){
+                        if(sym->getName() == (*I)->getOperand(0)->getName())
+                            return true;
+                    } 
+                }
+                I++; 
+           }
+               
+       }
+    }
+   return false; 
+}
 void processBB (BasicBlock *b, vector<Instruction *> constraints, bool verbose)
 {
     for (auto &I : *b) {
@@ -185,9 +214,10 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, bool verbose)
     }
     constraints.pop_back(); // remove terminator
 
+    errs() << taintAnalyse(constraints) << "\n";
+
    if (isa<ReturnInst>(b->getTerminator())) 
        return;
-
     if (auto branch = dyn_cast<BranchInst>(b->getTerminator())) {
         processBB(branch->getSuccessor(0), constraints, verbose); // recurse on true branch
         if (branch->isConditional()) {
@@ -209,7 +239,6 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, bool verbose)
         errs() << "\n---------------\n";
     }
 }
-
 namespace {
     struct SymEx : public FunctionPass {
         static char ID;
