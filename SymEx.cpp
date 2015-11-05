@@ -201,6 +201,19 @@ bool taintAnalyse(vector<Instruction *>path)
                 }
                 I++; 
            }
+           if(c->getCalledFunction()->getName()=="write"){ //check if the value in eval is symbolic
+                I--;
+               (*I)->dump();
+                //check for load 
+                if(isa<LoadInst>(*I)){
+                    for (auto& sym:symList){
+                        if(sym->getName() == (*I)->getOperand(0)->getName())
+                            return true;
+                    } 
+                }
+                I++; 
+           }
+
                
        }
     }
