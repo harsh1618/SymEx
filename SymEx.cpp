@@ -29,6 +29,8 @@ using namespace std;
 
 #define DEBUG_TYPE "SymEx"
 
+typedef pair<Value *, bool> branchCondition;
+
 set<Value *> Var;
 map<Value *, int> namedVarCounter;
 
@@ -165,49 +167,43 @@ void encodeConstraints (vector<Instruction> constraints)
     }
 }
 
-CmpInst::Predicate negatePredicate(CmpInst::Predicate pred)
+/* Find path constraints of the basic block and add them to constraints found so far.
+ * branches specifies the branch conditions on the path. */
+void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst *, branchCondition> branches,  bool verbose)
 {
-    if (pred == CmpInst::ICMP_EQ) return CmpInst::ICMP_NE;
-    if (pred == CmpInst::ICMP_NE) return CmpInst::ICMP_EQ;
-    if (pred == CmpInst::ICMP_SGT) return CmpInst::ICMP_SLE;
-    if (pred == CmpInst::ICMP_SLE) return CmpInst::ICMP_SGT;
-    if (pred == CmpInst::ICMP_SLT) return CmpInst::ICMP_SGE;
-    if (pred == CmpInst::ICMP_SGE) return CmpInst::ICMP_SLT;
-    assert(0 && "Unsupported predicate for negation");
-    return CmpInst::BAD_ICMP_PREDICATE; //dummy
-}
-
-void processBB (BasicBlock *b, vector<Instruction *> constraints, bool verbose)
-{
-    for (auto &I : *b) {
-        DEBUG(I.dump());
-        constraints.push_back(&I);
-    }
-    constraints.pop_back(); // remove terminator
-
-   if (isa<ReturnInst>(b->getTerminator())) 
-       return;
-
-    if (auto branch = dyn_cast<BranchInst>(b->getTerminator())) {
-        processBB(branch->getSuccessor(0), constraints, verbose); // recurse on true branch
-        if (branch->isConditional()) {
-            ICmpInst * condition = dyn_cast<ICmpInst>(branch->getCondition());
-            constraints.pop_back(); // remove branch condition from constraints
-
-            // negate the predicate to get the constraint for the false branch
-            CmpInst::Predicate negated = negatePredicate(condition->getPredicate());
-            ICmpInst false_constraint(negated, condition->getOperand(0), condition->getOperand(1));
-            constraints.push_back(&false_constraint);
-            processBB(branch->getSuccessor(1), constraints, verbose);
-        }
-        return;
-    }
-
     if (verbose) {
         errs() << "\n---------------\n";
         b->dump();
         errs() << "\n---------------\n";
     }
+
+    for (auto &I : *b) {
+        DEBUG(I.dump());
+        constraints.push_back(&I);
+    }
+    if(b->getTerminator()->getNumSuccessors() <= 1) {
+        constraints.pop_back();
+    }
+
+    if (isa<ReturnInst>(b->getTerminator()))  {
+        return;
+    }
+
+    if (auto branch = dyn_cast<BranchInst>(b->getTerminator())) {
+        if(branch->isConditional()) {
+            branches[branch] = make_pair(branch->getCondition(), true);
+            processBB(branch->getSuccessor(0), constraints, branches, verbose); // recurse on true branch
+
+            // negate the predicate to get the constraint for the false branch
+            branches[branch].second = false;
+            processBB(branch->getSuccessor(1), constraints, branches, verbose);
+            return;
+        }
+        else {
+            processBB(branch->getSuccessor(0), constraints, branches, verbose);
+        }
+    }
+
 }
 
 namespace {
@@ -221,7 +217,8 @@ namespace {
             findAllVars(&F);
             assignTempNames();
             vector<Instruction *> constraints;
-            processBB(&F.getEntryBlock(), constraints, false);
+            map<BranchInst *, branchCondition> b;
+            processBB(&F.getEntryBlock(), constraints, b, false);
             return false;
         }
     };
