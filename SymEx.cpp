@@ -34,6 +34,13 @@ typedef pair<Value *, bool> branchCondition;
 set<Value *> Var;
 map<Value *, int> namedVarCounter;
 
+bool isSink (string name)
+{
+    if (name == "eval") return true;
+    if (name == "write") return true;
+    return false;
+}
+
 void dumpBinInst (Instruction *I)
 {
     errs() << I->getName() << " = ";
@@ -169,46 +176,36 @@ void encodeConstraints (vector<Instruction> constraints)
 
 
 // takes vector of instruction as input and outputs true/false 
-bool taintAnalyse(vector<Instruction *>path)
+bool taintAnalyse(vector<Instruction *> *path)
 {
-    vector<Instruction *> symList;
-    for(vector<Instruction *>::iterator I=path.begin(), e = path.end();I!=e;I++ ){
-       if (isa<AllocaInst>(*I)){
-           (*I)->dump();
-           if ((*I)->getName().substr(0,3)=="sym"){
-                symList.push_back(*I);
-           }
-       }
-       if (auto c = dyn_cast<CallInst>(*I)){
-           if(c->getCalledFunction()->getName()=="eval"){ //check if the value in eval is symbolic
-                I--;
-               (*I)->dump();
-                //check for load 
-                if(isa<LoadInst>(*I)){
-                    for (auto& sym:symList){
-                        if(sym->getName() == (*I)->getOperand(0)->getName())
-                            return true;
-                    } 
-                }
-                I++; 
-           }
-           if(c->getCalledFunction()->getName()=="write"){ //check if the value in eval is symbolic
-                I--;
-               (*I)->dump();
-                //check for load 
-                if(isa<LoadInst>(*I)){
-                    for (auto& sym:symList){
-                        if(sym->getName() == (*I)->getOperand(0)->getName())
-                            return true;
-                    } 
-                }
-                I++; 
-           }
+    set<Instruction *> symList;
+    set<Value *> taintList;
+    for(vector<Instruction *>::iterator I=path->begin(), e = path->end();I!=e;I++) {
+        if (isa<AllocaInst>(*I)) {
+            if ((*I)->getName().substr(0,3)=="sym"){
+                taintList.insert(*I);
+                symList.insert(*I);
+            }
+        }
 
-               
-       }
+        if (auto lhs = getAssignedVars(*I)) {
+            for (auto& rhs : getUsedVars(*I)) {
+                if (taintList.count(rhs)) {
+                    taintList.insert(lhs);
+                }
+            }
+        }
+
+        if (auto c = dyn_cast<CallInst>(*I)) {
+            if(isSink(c->getCalledFunction()->getName())) { //check if the value in eval is symbolic
+                for (unsigned i = 0; i < (*I)->getNumOperands(); i++) {
+                    if (taintList.count((*I)->getOperand(i)))
+                        return true;
+                }
+            }
+        }
     }
-   return false; 
+    return false; 
 }
 
 /* Find path constraints of the basic block and add them to constraints found so far.
@@ -230,6 +227,9 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst
     }
 
     if (isa<ReturnInst>(b->getTerminator()))  {
+        if (taintAnalyse(&constraints)) {
+            //genConstraints();
+        }
         return;
     }
 
