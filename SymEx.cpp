@@ -29,8 +29,17 @@ using namespace std;
 
 #define DEBUG_TYPE "SymEx"
 
+typedef pair<Value *, bool> branchCondition;
+
 set<Value *> Var;
 map<Value *, int> namedVarCounter;
+
+bool isSink (string name)
+{
+    if (name == "eval") return true;
+    if (name == "write") return true;
+    return false;
+}
 
 void dumpBinInst (Instruction *I)
 {
@@ -165,6 +174,7 @@ void encodeConstraints (vector<Instruction> constraints)
     }
 }
 
+<<<<<<< HEAD
 CmpInst::Predicate negatePredicate(CmpInst::Predicate pred)
 {
     if (pred == CmpInst::ICMP_EQ) return CmpInst::ICMP_NE;
@@ -194,9 +204,13 @@ void emitCondition(vector<Instruction *>path)
         }
     }   
 }    
+=======
+
+>>>>>>> 1d2563131e68008ddbe51300cc3014e72e8d8963
 // takes vector of instruction as input and outputs true/false 
-bool taintAnalyse(vector<Instruction *>path)
+bool taintAnalyse(vector<Instruction *> *path)
 {
+<<<<<<< HEAD
     vector<Instruction *> symList;
     for(vector<Instruction *>::iterator I=path.begin(), e = path.end();I!=e;I++ ){
         if (isa<AllocaInst>(*I)){
@@ -232,42 +246,83 @@ bool taintAnalyse(vector<Instruction *>path)
             }
 
 
+=======
+    set<Instruction *> symList;
+    set<Value *> taintList;
+    for(vector<Instruction *>::iterator I=path->begin(), e = path->end();I!=e;I++) {
+        if (isa<AllocaInst>(*I)) {
+            if ((*I)->getName().substr(0,3)=="sym"){
+                taintList.insert(*I);
+                symList.insert(*I);
+            }
+        }
+
+        if (auto lhs = getAssignedVars(*I)) {
+            for (auto& rhs : getUsedVars(*I)) {
+                if (taintList.count(rhs)) {
+                    taintList.insert(lhs);
+                }
+            }
+        }
+
+        if (auto c = dyn_cast<CallInst>(*I)) {
+            if(isSink(c->getCalledFunction()->getName())) { //check if the value in eval is symbolic
+                for (unsigned i = 0; i < (*I)->getNumOperands(); i++) {
+                    if (taintList.count((*I)->getOperand(i)))
+                        return true;
+                }
+            }
+>>>>>>> 1d2563131e68008ddbe51300cc3014e72e8d8963
         }
     }
     return false; 
 }
-void processBB (BasicBlock *b, vector<Instruction *> constraints, bool verbose)
+
+/* Find path constraints of the basic block and add them to constraints found so far.
+ * branches specifies the branch conditions on the path. */
+void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst *, branchCondition> branches,  bool verbose)
 {
-    for (auto &I : *b) {
-        DEBUG(I.dump());
-        constraints.push_back(&I);
-    }
-    constraints.pop_back(); // remove terminator
-
-    errs() << taintAnalyse(constraints) << "\n";
-
-    if (isa<ReturnInst>(b->getTerminator())) 
-        return;
-    if (auto branch = dyn_cast<BranchInst>(b->getTerminator())) {
-        processBB(branch->getSuccessor(0), constraints, verbose); // recurse on true branch
-        if (branch->isConditional()) {
-            ICmpInst * condition = dyn_cast<ICmpInst>(branch->getCondition());
-            constraints.pop_back(); // remove branch condition from constraints
-
-            // negate the predicate to get the constraint for the false branch
-            CmpInst::Predicate negated = negatePredicate(condition->getPredicate());
-            ICmpInst false_constraint(negated, condition->getOperand(0), condition->getOperand(1));
-            constraints.push_back(&false_constraint);
-            processBB(branch->getSuccessor(1), constraints, verbose);
-        }
-        return;
-    }
-
     if (verbose) {
         errs() << "\n---------------\n";
         b->dump();
         errs() << "\n---------------\n";
     }
+
+    for (auto &I : *b) {
+        DEBUG(I.dump());
+        constraints.push_back(&I);
+    }
+    if(b->getTerminator()->getNumSuccessors() <= 1) {
+        constraints.pop_back();
+    }
+
+    if (isa<ReturnInst>(b->getTerminator()))  {
+        if (taintAnalyse(&constraints)) {
+            //genConstraints();
+        }
+        return;
+    }
+
+<<<<<<< HEAD
+    if (isa<ReturnInst>(b->getTerminator())) 
+        return;
+=======
+>>>>>>> 1d2563131e68008ddbe51300cc3014e72e8d8963
+    if (auto branch = dyn_cast<BranchInst>(b->getTerminator())) {
+        if(branch->isConditional()) {
+            branches[branch] = make_pair(branch->getCondition(), true);
+            processBB(branch->getSuccessor(0), constraints, branches, verbose); // recurse on true branch
+
+            // negate the predicate to get the constraint for the false branch
+            branches[branch].second = false;
+            processBB(branch->getSuccessor(1), constraints, branches, verbose);
+            return;
+        }
+        else {
+            processBB(branch->getSuccessor(0), constraints, branches, verbose);
+        }
+    }
+
 }
 namespace {
     struct SymEx : public FunctionPass {
@@ -280,7 +335,8 @@ namespace {
             findAllVars(&F);
             assignTempNames();
             vector<Instruction *> constraints;
-            processBB(&F.getEntryBlock(), constraints, false);
+            map<BranchInst *, branchCondition> b;
+            processBB(&F.getEntryBlock(), constraints, b, false);
             return false;
         }
     };
