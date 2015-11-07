@@ -176,22 +176,39 @@ CmpInst::Predicate negatePredicate(CmpInst::Predicate pred)
     assert(0 && "Unsupported predicate for negation");
     return CmpInst::BAD_ICMP_PREDICATE; //dummy
 }
-
+void emitCondition(vector<Instruction *>path)
+{
+    for(auto& I:path) {
+        if (auto c = dyn_cast<CallInst>(I)) {
+            llvm::StringRef func_name = c->getCalledFunction()->getName();
+            if (func_name == "charAt") {
+            }
+            if (func_name == "indexOf") {
+            }
+            if (func_name == "match") {
+            }
+            if (func_name == "concat") {
+            }
+            if (func_name == "subString") {
+            }
+        }
+    }   
+}    
 // takes vector of instruction as input and outputs true/false 
 bool taintAnalyse(vector<Instruction *>path)
 {
     vector<Instruction *> symList;
     for(vector<Instruction *>::iterator I=path.begin(), e = path.end();I!=e;I++ ){
-       if (isa<AllocaInst>(*I)){
-           (*I)->dump();
-           if ((*I)->getName().substr(0,3)=="sym"){
+        if (isa<AllocaInst>(*I)){
+            (*I)->dump();
+            if ((*I)->getName().substr(0,3)=="sym"){
                 symList.push_back(*I);
-           }
-       }
-       if (auto c = dyn_cast<CallInst>(*I)){
-           if(c->getCalledFunction()->getName()=="eval"){ //check if the value in eval is symbolic
+            }
+        }
+        if (auto c = dyn_cast<CallInst>(*I)){
+            if(c->getCalledFunction()->getName()=="eval"){ //check if the value in eval is symbolic
                 I--;
-               (*I)->dump();
+                (*I)->dump();
                 //check for load 
                 if(isa<LoadInst>(*I)){
                     for (auto& sym:symList){
@@ -200,10 +217,10 @@ bool taintAnalyse(vector<Instruction *>path)
                     } 
                 }
                 I++; 
-           }
-           if(c->getCalledFunction()->getName()=="write"){ //check if the value in eval is symbolic
+            }
+            if(c->getCalledFunction()->getName()=="write"){ //check if the value in eval is symbolic
                 I--;
-               (*I)->dump();
+                (*I)->dump();
                 //check for load 
                 if(isa<LoadInst>(*I)){
                     for (auto& sym:symList){
@@ -212,12 +229,12 @@ bool taintAnalyse(vector<Instruction *>path)
                     } 
                 }
                 I++; 
-           }
+            }
 
-               
-       }
+
+        }
     }
-   return false; 
+    return false; 
 }
 void processBB (BasicBlock *b, vector<Instruction *> constraints, bool verbose)
 {
@@ -229,8 +246,8 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, bool verbose)
 
     errs() << taintAnalyse(constraints) << "\n";
 
-   if (isa<ReturnInst>(b->getTerminator())) 
-       return;
+    if (isa<ReturnInst>(b->getTerminator())) 
+        return;
     if (auto branch = dyn_cast<BranchInst>(b->getTerminator())) {
         processBB(branch->getSuccessor(0), constraints, verbose); // recurse on true branch
         if (branch->isConditional()) {
