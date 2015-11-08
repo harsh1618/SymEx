@@ -154,26 +154,63 @@ void findAllVars (Function *F)
     }
 }
 
-void encodeConstraints (vector<Instruction> constraints)
+void encodeConstraints (vector<Instruction*> constraints)
 {
-    for (auto& I : constraints) {
-        if (isa<AllocaInst>(&I)) {
+    for (auto I : constraints) {
+        if (isa<AllocaInst>(I)) {
         }
 
-        if (isa<StoreInst>(&I)) {
-            dumpStoreInst(&I);
+        if (isa<StoreInst>(I)) {
+            dumpStoreInst(I);
         }
 
-        if (isa<LoadInst>(&I)) {
-            dumpLoadInst(&I);
+        if (isa<LoadInst>(I)) {
+            dumpLoadInst(I);
         }
 
-        if (isa<BinaryOperator>(&I)) {
-            dumpBinInst(&I);
+        if (isa<BinaryOperator>(I)) {
+            dumpBinInst(I);
         }
     }
 }
-
+/*functions in z3
+charAt(str,int) - returns the character str[int] 
+concat(str1,str2) - return a str1+str2
+contains(str1,str2) - returns true if str1 is in str2
+endswith(str1,str2) - returns string str2 is in str1 
+indexof
+lastIndexof
+length
+regex
+replace
+startswith
+substring
+*/
+pair<string,pair<Value*,Value*> > emitCondition(Instruction * I)
+{
+    pair<string,pair<Value*,Value*> > cstrnt;
+    if (auto c = dyn_cast<CallInst>(I)) {
+        llvm::StringRef func_name = c->getCalledFunction()->getName();
+        if (func_name == "charAt") {
+            return make_pair("charAt",make_pair(c->getOperand(0),c->getOperand(1)));
+        }
+        if (func_name == "indexOf") {
+            return make_pair("indexOf",make_pair(c->getOperand(0),c->getOperand(1)));
+        }
+        if (func_name == "match") {
+            return make_pair("match",make_pair(c->getOperand(0),c->getOperand(1)));
+            
+        }
+        if (func_name == "concat") {
+            return make_pair("concat",make_pair(c->getOperand(0),c->getOperand(1)));
+        }
+        if (func_name == "subString") {
+            return make_pair("substring",make_pair(c->getOperand(0),c->getOperand(1)));
+        }
+    }
+    //check for null when called 
+    return cstrnt;
+}    
 
 // takes vector of instruction as input and outputs true/false 
 bool taintAnalyse(vector<Instruction *> *path)
@@ -225,7 +262,7 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst
     if(b->getTerminator()->getNumSuccessors() <= 1) {
         constraints.pop_back();
     }
-
+    encodeConstraints(constraints);
     if (isa<ReturnInst>(b->getTerminator()))  {
         if (taintAnalyse(&constraints)) {
             //genConstraints();
