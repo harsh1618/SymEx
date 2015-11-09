@@ -1,0 +1,20 @@
+Requirements to build 
+LLVM-3.6
+clang 
+Z3 Solver
+S3 Solver
+
+Procedure to use 
+-Place the Directory in llvm-src/lib/Transform
+-make 
+-../../../Release+Asserts/bin/opt -load ../../../Release+Asserts/lib/SymEx.so -symex -disable-output  < test.bc
+#this generates files which have to be fed to S3 solver in Constraints Directory
+#invoke S3 via 
+./run.py -f a
+This generates inputs sastisfying specified constraints. Verify the generated inputs for attack.
+
+Generate the test.bc file via
+-clang-3.6 -emit-llvm -c -g a.c -o test.bc 
+
+Source code is also available on 
+https://github.com/harsh1618/SymEx

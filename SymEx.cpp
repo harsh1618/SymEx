@@ -3,7 +3,7 @@
  * Authors: Harshvardhan Sharma (11907299)
  *          Aniruddha Zalani (11907097)
  */
-
+// TODO: type information and emit contraints 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Constants.h"
@@ -258,6 +258,8 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst
     for (auto &I : *b) {
         DEBUG(I.dump());
         constraints.push_back(&I);
+        errs() << I.getType()->getNumContainedTypes() << " ";
+        I.dump();
     }
     if(b->getTerminator()->getNumSuccessors() <= 1) {
         constraints.pop_back();
