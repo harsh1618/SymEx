@@ -3,7 +3,6 @@
  * Authors: Harshvardhan Sharma (11907299)
  *          Aniruddha Zalani (11907097)
  */
-// TODO: type information and emit contraints 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Constants.h"
@@ -34,6 +33,8 @@ typedef pair<Value *, bool> branchCondition;
 set<Value *> Var;
 map<Value *, int> namedVarCounter;
 
+pair<string,pair<Value*,Value*> > emitCondition(Instruction * I);
+
 bool isSink (string name)
 {
     if (name == "eval") return true;
@@ -43,6 +44,7 @@ bool isSink (string name)
 
 void dumpBinInst (Instruction *I)
 {
+    DEBUG(errs()<<"CON\n";I->dump());
     errs() << I->getName() << " = ";
     for (int i = 0; i < 2; i++) {
         if (auto c = dyn_cast<ConstantInt>(I->getOperand(i))) errs() << c->getValue();
@@ -75,9 +77,15 @@ void dumpBinInst (Instruction *I)
 
 void dumpStoreInst (Instruction *I)
 {
-    errs() << I->getOperand(1)->getName();;
+    DEBUG(errs()<<"CON\n";I->dump());
+    errs() << "declare " << I->getOperand(1)->getName();
     if (namedVarCounter.count(I->getOperand(1)))
         errs() << ++namedVarCounter[I->getOperand(1)];
+    errs() << " ";
+    I->getOperand(1)->getType()->dump();
+    errs() << I->getOperand(1)->getName();;
+    if (namedVarCounter.count(I->getOperand(1)))
+        errs() << namedVarCounter[I->getOperand(1)];
     errs() << " = ";
     if (auto V = dyn_cast<ConstantInt>(I->getOperand(0))) {
         errs() << V->getValue();
@@ -90,6 +98,7 @@ void dumpStoreInst (Instruction *I)
 
 void dumpLoadInst(Instruction *I)
 {
+    DEBUG(errs()<<"CON\n";I->dump());
     errs() << I->getName() << " = " << I->getOperand(0)->getName() << namedVarCounter[I->getOperand(0)] << "\n";
 }
 
@@ -119,12 +128,15 @@ Value * getAssignedVars (Instruction *I)
     if (isa<StoreInst>(I)) {
         return I->getOperand(1);
     }
-    if( ! (isa<TerminatorInst>(I)
-    // void function call
-    || (isa<CallInst>(I) && dyn_cast<CallInst>(I)->getCalledFunction()->getReturnType()->getTypeID() == 0) )) {
-        return I;
+    if (isa<TerminatorInst>(I)) {
+        return NULL;
     }
-    return NULL;
+    if (auto call = dyn_cast<CallInst>(I)) {
+        if (call->getCalledFunction() && call->getCalledFunction()->getReturnType()->getTypeID() == 0) {
+            return NULL;
+        }
+    }
+    return I;
 }
 
 /* Assign names of the form tmpXX to unnamed variables in the IR. */
@@ -154,10 +166,28 @@ void findAllVars (Function *F)
     }
 }
 
-void encodeConstraints (vector<Instruction*> constraints)
+void encodeConstraints (vector<Instruction *> constraints, map<BranchInst *, branchCondition> branches)
 {
+    set<Value*> done;
+    for (map<BranchInst *, branchCondition>::iterator it = branches.begin(); it!=branches.end(); it++)
+        errs() << "declare " << it->first->getName() << " bool)\n";
+    }
+    for (auto I : constraints) {
+        if (isa<StoreInst>(I)) continue;
+        if (getAssignedVars(I)) {
+            if (!done.count(I)) {
+                DEBUG(errs()<<"CON\n";I->dump());
+                errs() << "declare " << I->getName();
+                if(namedVarCounter.count(I)) errs() << namedVarCounter[I];
+                errs() << " ";
+                I->getType()->dump();
+                done.insert(I);
+            }
+        }
+    }
     for (auto I : constraints) {
         if (isa<AllocaInst>(I)) {
+            continue;
         }
 
         if (isa<StoreInst>(I)) {
@@ -170,6 +200,17 @@ void encodeConstraints (vector<Instruction*> constraints)
 
         if (isa<BinaryOperator>(I)) {
             dumpBinInst(I);
+        }
+
+        if (isa<CallInst>(I)) {
+            pair<string, pair<Value*, Value*> > c = emitCondition(I);
+            if (c.first != "") {
+                errs() << getAssignedVars(I)->getName() << " = " << c.first << " ";
+                if (auto cons = dyn_cast<ConstantInt>(c.second.first)) errs() << cons->getValue() << " ";
+                else errs() << c.second.first->getName() << " ";
+                if (auto cons = dyn_cast<ConstantInt>(c.second.second)) errs() << cons->getValue() << "\n";
+                else errs() << c.second.first->getName() << "\n";
+            }
         }
     }
 }
@@ -188,6 +229,7 @@ substring
 */
 pair<string,pair<Value*,Value*> > emitCondition(Instruction * I)
 {
+    DEBUG(errs()<<"CALL\n";I->dump());
     pair<string,pair<Value*,Value*> > cstrnt;
     if (auto c = dyn_cast<CallInst>(I)) {
         llvm::StringRef func_name = c->getCalledFunction()->getName();
@@ -218,8 +260,10 @@ bool taintAnalyse(vector<Instruction *> *path)
     set<Instruction *> symList;
     set<Value *> taintList;
     for(vector<Instruction *>::iterator I=path->begin(), e = path->end();I!=e;I++) {
+            DEBUG((*I)->dump());
         if (isa<AllocaInst>(*I)) {
             if ((*I)->getName().substr(0,3)=="sym"){
+            DEBUG(errs() << "SYM\n");
                 taintList.insert(*I);
                 symList.insert(*I);
             }
@@ -228,6 +272,7 @@ bool taintAnalyse(vector<Instruction *> *path)
         if (auto lhs = getAssignedVars(*I)) {
             for (auto& rhs : getUsedVars(*I)) {
                 if (taintList.count(rhs)) {
+            DEBUG(errs() << "TNT\n");
                     taintList.insert(lhs);
                 }
             }
@@ -235,6 +280,7 @@ bool taintAnalyse(vector<Instruction *> *path)
 
         if (auto c = dyn_cast<CallInst>(*I)) {
             if(isSink(c->getCalledFunction()->getName())) { //check if the value in eval is symbolic
+            DEBUG(errs() << "SINK\n");
                 for (unsigned i = 0; i < (*I)->getNumOperands(); i++) {
                     if (taintList.count((*I)->getOperand(i)))
                         return true;
@@ -258,16 +304,15 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst
     for (auto &I : *b) {
         DEBUG(I.dump());
         constraints.push_back(&I);
-        errs() << I.getType()->getNumContainedTypes() << " ";
-        I.dump();
+        //errs() << I.getType()->getNumContainedTypes() << " ";
+        //I.dump();
     }
     if(b->getTerminator()->getNumSuccessors() <= 1) {
         constraints.pop_back();
     }
-    encodeConstraints(constraints);
     if (isa<ReturnInst>(b->getTerminator()))  {
         if (taintAnalyse(&constraints)) {
-            //genConstraints();
+            encodeConstraints(constraints, branches);
         }
         return;
     }
@@ -288,6 +333,7 @@ void processBB (BasicBlock *b, vector<Instruction *> constraints, map<BranchInst
     }
 
 }
+
 namespace {
     struct SymEx : public FunctionPass {
         static char ID;
